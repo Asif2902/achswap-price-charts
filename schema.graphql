@@ -1,0 +1,259 @@
+# AchSwap price-chart subgraph
+# Designed for TradingView-style OHLC candles + last-price queries.
+# Network: Arc Testnet (chainId 5042002)
+
+enum DexVersion {
+  V2
+  V3
+  V4
+}
+
+enum PriceSource {
+  DEX
+  RWA_ORACLE
+}
+
+"""Stablecoin / USD reference bundle (WUSDC = $1 on Arc)."""
+type Bundle @entity(immutable: false) {
+  id: ID!
+  usdPrice: BigDecimal!
+}
+
+"""ERC-20 or native currency tracked for charting."""
+type Token @entity(immutable: false) {
+  id: ID! # lowercased address
+  address: Bytes!
+  symbol: String!
+  name: String!
+  decimals: Int!
+  isStable: Boolean!
+  isRwaSynth: Boolean!
+
+  """Best USD price derived from stables / oracle."""
+  derivedUsd: BigDecimal!
+  lastPriceUpdate: BigInt!
+
+  volumeUsd: BigDecimal!
+  txCount: BigInt!
+  poolCount: BigInt!
+
+  createdAtTimestamp: BigInt!
+  createdAtBlock: BigInt!
+
+  hourData: [TokenHourData!]! @derivedFrom(field: "token")
+  dayData: [TokenDayData!]! @derivedFrom(field: "token")
+  pools0: [Pool!]! @derivedFrom(field: "token0")
+  pools1: [Pool!]! @derivedFrom(field: "token1")
+}
+
+"""1-hour OHLC candle for a token (USD)."""
+type TokenHourData @entity(immutable: false) {
+  id: ID! # token-hourIndex
+  token: Token!
+  periodStartUnix: Int!
+  open: BigDecimal!
+  high: BigDecimal!
+  low: BigDecimal!
+  close: BigDecimal!
+  priceUsd: BigDecimal!
+  volume: BigDecimal!
+  volumeUsd: BigDecimal!
+  txCount: BigInt!
+}
+
+"""1-day OHLC candle for a token (USD)."""
+type TokenDayData @entity(immutable: false) {
+  id: ID! # token-dayIndex
+  token: Token!
+  date: Int!
+  open: BigDecimal!
+  high: BigDecimal!
+  low: BigDecimal!
+  close: BigDecimal!
+  priceUsd: BigDecimal!
+  volume: BigDecimal!
+  volumeUsd: BigDecimal!
+  txCount: BigInt!
+}
+
+"""DEX pool (V2 pair address, V3 pool address, or V4 poolId)."""
+type Pool @entity(immutable: false) {
+  id: ID!
+  address: Bytes!
+  version: DexVersion!
+  token0: Token!
+  token1: Token!
+  feeTier: BigInt!
+
+  """token1 per token0"""
+  token0Price: BigDecimal!
+  """token0 per token1"""
+  token1Price: BigDecimal!
+  """token0 USD"""
+  token0PriceUsd: BigDecimal!
+  """token1 USD"""
+  token1PriceUsd: BigDecimal!
+
+  reserve0: BigDecimal!
+  reserve1: BigDecimal!
+  liquidity: BigInt!
+  sqrtPriceX96: BigInt!
+  tick: BigInt!
+  tvlUsd: BigDecimal!
+
+  volumeToken0: BigDecimal!
+  volumeToken1: BigDecimal!
+  volumeUsd: BigDecimal!
+  txCount: BigInt!
+  swapCount: BigInt!
+
+  # V4-only
+  hooks: Bytes
+  tickSpacing: BigInt
+
+  createdAtTimestamp: BigInt!
+  createdAtBlock: BigInt!
+  updatedAtTimestamp: BigInt!
+  updatedAtBlock: BigInt!
+
+  hourData: [PoolHourData!]! @derivedFrom(field: "pool")
+  dayData: [PoolDayData!]! @derivedFrom(field: "pool")
+  swaps: [Swap!]! @derivedFrom(field: "pool")
+}
+
+"""1-hour OHLC for pool token0Price (token1/token0)."""
+type PoolHourData @entity(immutable: false) {
+  id: ID!
+  pool: Pool!
+  periodStartUnix: Int!
+  open: BigDecimal!
+  high: BigDecimal!
+  low: BigDecimal!
+  close: BigDecimal!
+  token0Price: BigDecimal!
+  token1Price: BigDecimal!
+  token0PriceUsd: BigDecimal!
+  token1PriceUsd: BigDecimal!
+  tvlUsd: BigDecimal!
+  volumeToken0: BigDecimal!
+  volumeToken1: BigDecimal!
+  volumeUsd: BigDecimal!
+  txCount: BigInt!
+}
+
+"""1-day OHLC for pool token0Price."""
+type PoolDayData @entity(immutable: false) {
+  id: ID!
+  pool: Pool!
+  date: Int!
+  open: BigDecimal!
+  high: BigDecimal!
+  low: BigDecimal!
+  close: BigDecimal!
+  token0Price: BigDecimal!
+  token1Price: BigDecimal!
+  token0PriceUsd: BigDecimal!
+  token1PriceUsd: BigDecimal!
+  tvlUsd: BigDecimal!
+  volumeToken0: BigDecimal!
+  volumeToken1: BigDecimal!
+  volumeUsd: BigDecimal!
+  txCount: BigInt!
+}
+
+"""Individual swap / trade tick (for trade history charts)."""
+type Swap @entity(immutable: true) {
+  id: ID!
+  txHash: Bytes!
+  logIndex: BigInt!
+  timestamp: BigInt!
+  blockNumber: BigInt!
+
+  pool: Pool!
+  version: DexVersion!
+  sender: Bytes!
+  recipient: Bytes
+
+  token0: Token!
+  token1: Token!
+  amount0: BigDecimal!
+  amount1: BigDecimal!
+  amountUsd: BigDecimal!
+
+  """Post-swap token0Price (token1 per token0)."""
+  token0Price: BigDecimal!
+  token1Price: BigDecimal!
+  token0PriceUsd: BigDecimal!
+  token1PriceUsd: BigDecimal!
+  sqrtPriceX96: BigInt
+  tick: BigInt
+}
+
+"""RWA oracle pair (stocks, commodities, forex)."""
+type RwaPair @entity(immutable: false) {
+  id: ID! # pairId string
+  pairId: BigInt!
+  name: String!
+  symbol: String!
+  category: Int!
+  synth: Bytes!
+  synthToken: Token
+
+  active: Boolean!
+  frozen: Boolean!
+  priceUsd: BigDecimal!
+  lastPriceTimestamp: BigInt!
+
+  maxStaleness: BigInt!
+  maxDeviation: BigInt!
+
+  updateCount: BigInt!
+  createdAtTimestamp: BigInt!
+  createdAtBlock: BigInt!
+  updatedAtTimestamp: BigInt!
+  updatedAtBlock: BigInt!
+
+  hourData: [RwaPairHourData!]! @derivedFrom(field: "pair")
+  dayData: [RwaPairDayData!]! @derivedFrom(field: "pair")
+  pricePoints: [RwaPricePoint!]! @derivedFrom(field: "pair")
+}
+
+"""Every oracle price submission (raw tick for fine-grained charts)."""
+type RwaPricePoint @entity(immutable: true) {
+  id: ID!
+  pair: RwaPair!
+  symbol: String!
+  priceUsd: BigDecimal!
+  previousPriceUsd: BigDecimal!
+  delta: BigInt!
+  submitter: Bytes!
+  timestamp: BigInt!
+  blockNumber: BigInt!
+  txHash: Bytes!
+}
+
+"""1-hour OHLC for RWA oracle price."""
+type RwaPairHourData @entity(immutable: false) {
+  id: ID!
+  pair: RwaPair!
+  periodStartUnix: Int!
+  open: BigDecimal!
+  high: BigDecimal!
+  low: BigDecimal!
+  close: BigDecimal!
+  priceUsd: BigDecimal!
+  updateCount: BigInt!
+}
+
+"""1-day OHLC for RWA oracle price."""
+type RwaPairDayData @entity(immutable: false) {
+  id: ID!
+  pair: RwaPair!
+  date: Int!
+  open: BigDecimal!
+  high: BigDecimal!
+  low: BigDecimal!
+  close: BigDecimal!
+  priceUsd: BigDecimal!
+  updateCount: BigInt!
+}
